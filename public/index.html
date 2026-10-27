@@ -5,63 +5,155 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aplikasi Warung Digital</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        .spinner-dark {
+            border-color: rgba(59,130,246,0.3);
+            border-top-color: #3b82f6;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
 </head>
 <body class="bg-gray-100 font-sans p-6">
     <div class="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-md">
         <h1 class="text-2xl font-bold text-gray-800 mb-4">Warung Digital Sederhana</h1>
-        
+
+        <!-- Pemberitahuan status -->
+        <div id="statusBox" class="hidden mb-4 px-4 py-2 rounded text-sm"></div>
+
         <div class="mb-6">
             <h2 class="text-lg font-semibold mb-2">Tambah Produk Baru</h2>
             <form id="productForm" class="space-y-3">
                 <input type="text" id="name" placeholder="Nama Barang" required class="w-full p-2 border rounded">
                 <input type="number" id="price" placeholder="Harga (Rp)" required class="w-full p-2 border rounded">
                 <input type="number" id="stock" placeholder="Stok" required class="w-full p-2 border rounded">
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Simpan Barang</button>
+                <button type="submit" id="submitBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2">
+                    <span id="submitBtnText">Simpan Barang</span>
+                    <span id="submitSpinner" class="spinner hidden"></span>
+                </button>
             </form>
         </div>
 
         <div>
-            <h2 class="text-lg font-semibold mb-2">Daftar Barang di Warung</h2>
-            <ul id="productList" class="divide-y divide-gray-200">
+            <div class="flex items-center justify-between mb-2 gap-3">
+                <h2 class="text-lg font-semibold">Daftar Barang di Warung</h2>
+                <button id="refreshBtn" type="button" class="text-sm text-blue-600 hover:underline flex items-center gap-1">
+                    <span class="spinner spinner-dark hidden" id="refreshSpinner"></span>
+                    <span id="refreshText">Muat Ulang</span>
+                </button>
+            </div>
+
+            <!-- Indikator memuat daftar -->
+            <div id="listLoading" class="py-6 flex items-center justify-center gap-2 text-gray-500">
+                <span class="spinner spinner-dark"></span>
+                <span>Memuat data...</span>
+            </div>
+
+            <ul id="productList" class="divide-y divide-gray-200 hidden">
                 <!-- Data akan dimuat melalui JavaScript -->
             </ul>
+
+            <p id="listEmpty" class="py-6 text-center text-gray-400 hidden">Belum ada barang. Tambahkan lewat form di atas.</p>
         </div>
     </div>
 
     <script>
+        const statusBox = document.getElementById('statusBox');
+
+        function showStatus(message, type) {
+            statusBox.textContent = message;
+            statusBox.className = 'mb-4 px-4 py-2 rounded text-sm ' +
+                (type === 'error'
+                    ? 'bg-red-100 text-red-700 border border-red-200'
+                    : 'bg-green-100 text-green-700 border border-green-200');
+        }
+        function hideStatus() {
+            statusBox.classList.add('hidden');
+        }
+
         async function fetchProducts() {
-            const res = await fetch('/api/products');
-            const result = await res.json();
             const list = document.getElementById('productList');
-            list.innerHTML = '';
-            
-            if(result.success) {
+            const loading = document.getElementById('listLoading');
+            const empty = document.getElementById('listEmpty');
+            const refreshSpinner = document.getElementById('refreshSpinner');
+
+            loading.classList.remove('hidden');
+            list.classList.add('hidden');
+            empty.classList.add('hidden');
+            refreshSpinner.classList.remove('hidden');
+
+            try {
+                const res = await fetch('/api/products');
+                const result = await res.json();
+
+                if (!result.success) throw new Error(result.error || 'Gagal memuat data');
+
+                list.innerHTML = '';
                 result.data.forEach(p => {
                     const li = document.createElement('li');
-                    li.className = "py-2 flex justify-between items-center";
-                    li.innerHTML = `<span><strong>${p.name}</strong> - Rp ${p.price} (Stok: ${p.stock})</span>`;
+                    li.className = 'py-2 flex justify-between items-center';
+                    li.innerHTML = '<span><strong>' + p.name + '</strong> - Rp ' + p.price + ' (Stok: ' + p.stock + ')</span>';
                     list.appendChild(li);
                 });
+
+                if (result.data.length === 0) empty.classList.remove('hidden');
+                else list.classList.remove('hidden');
+            } catch (err) {
+                empty.classList.remove('hidden');
+                empty.textContent = 'Gagal memuat data: ' + err.message;
+                showStatus('Tidak dapat terhubung ke database: ' + err.message, 'error');
+            } finally {
+                loading.classList.add('hidden');
+                refreshSpinner.classList.add('hidden');
             }
         }
 
         document.getElementById('productForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const submitBtn = document.getElementById('submitBtn');
+            const submitBtnText = document.getElementById('submitBtnText');
+            const submitSpinner = document.getElementById('submitSpinner');
+
             const name = document.getElementById('name').value;
             const price = document.getElementById('price').value;
             const stock = document.getElementById('stock').value;
 
-            const res = await fetch('/api/products', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, price, stock })
-            });
+            // Kunci form & tampilkan indikator memuat
+            submitBtn.disabled = true;
+            submitSpinner.classList.remove('hidden');
+            submitBtnText.textContent = 'Menyimpan...';
 
-            if(res.ok) {
+            try {
+                const res = await fetch('/api/products', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, price, stock })
+                });
+                const result = await res.json();
+
+                if (!result.success) throw new Error(result.error || 'Gagal menyimpan');
+
                 document.getElementById('productForm').reset();
+                showStatus('Barang berhasil disimpan ke database', 'success');
                 fetchProducts();
+            } catch (err) {
+                showStatus('Gagal menyimpan barang: ' + err.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitSpinner.classList.add('hidden');
+                submitBtnText.textContent = 'Simpan Barang';
             }
         });
+
+        document.getElementById('refreshBtn').addEventListener('click', fetchProducts);
 
         fetchProducts();
     </script>
